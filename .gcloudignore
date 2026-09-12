@@ -1,0 +1,17 @@
+.gcloudignore
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.DS_Store
+.vscode
+node_modules
+npm-debug.log*
+yarn-error.log*
+*.log
+build
+coverage
+reports
+artifacts
+work.md

@@ -1,32 +1,32 @@
-const { spreadsheetId } = require("./config");
+function sheetTitleForChat(chat) {
+  return `${chat.title}${chat.id}`;
+}
 
-async function ensureSheetExists(sheets, sheetTitle) {
-  const res = await sheets.spreadsheets.get({ spreadsheetId });
-  const sheetExists = res.data.sheets.some(
-    (s) => s.properties.title === sheetTitle
-  );
+function sheetRange(sheetTitle, cells) {
+  return `'${sheetTitle.replace(/'/g, "''")}'!${cells}`;
+}
 
-  if (!sheetExists) {
-    // 1. Создаём лист
+function createExpenseStore({ sheets, spreadsheetId }) {
+  async function ensureSheetExists(sheetTitle) {
+    const res = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetExists = res.data.sheets.some(
+      (sheet) => sheet.properties.title === sheetTitle
+    );
+
+    if (sheetExists) return;
+
     const addSheetRes = await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       resource: {
-        requests: [
-          {
-            addSheet: {
-              properties: { title: sheetTitle },
-            },
-          },
-        ],
+        requests: [{ addSheet: { properties: { title: sheetTitle } } }],
       },
     });
 
     const sheetId = addSheetRes.data.replies[0].addSheet.properties.sheetId;
 
-    // 2. Добавляем заголовки в A1
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${sheetTitle}!A1`,
+      range: sheetRange(sheetTitle, "A1"),
       valueInputOption: "USER_ENTERED",
       resource: {
         values: [
@@ -35,7 +35,7 @@ async function ensureSheetExists(sheets, sheetTitle) {
             "Сумма",
             "Комментарий",
             "Источник",
-            "",
+            "Update ID",
             "",
             "",
             "=SUM(B2:B)",
@@ -44,8 +44,7 @@ async function ensureSheetExists(sheets, sheetTitle) {
       },
     });
 
-    // 3. Форматирование: колонка B и ячейка H1 как денежные
-    return sheets.spreadsheets.batchUpdate({
+    await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       resource: {
         requests: [
@@ -53,16 +52,13 @@ async function ensureSheetExists(sheets, sheetTitle) {
             repeatCell: {
               range: {
                 sheetId,
-                startColumnIndex: 1, // колонка B
+                startColumnIndex: 1,
                 endColumnIndex: 2,
-                startRowIndex: 1, // начиная со строки 2, чтобы не трогать заголовок
+                startRowIndex: 1,
               },
               cell: {
                 userEnteredFormat: {
-                  numberFormat: {
-                    type: "NUMBER",
-                    pattern: "#,##0.00₸", // формат с валютой
-                  },
+                  numberFormat: { type: "NUMBER", pattern: "#,##0.00₸" },
                 },
               },
               fields: "userEnteredFormat.numberFormat",
@@ -72,17 +68,14 @@ async function ensureSheetExists(sheets, sheetTitle) {
             repeatCell: {
               range: {
                 sheetId,
-                startColumnIndex: 7, // колонка H
+                startColumnIndex: 7,
                 endColumnIndex: 8,
                 startRowIndex: 0,
                 endRowIndex: 1,
               },
               cell: {
                 userEnteredFormat: {
-                  numberFormat: {
-                    type: "NUMBER",
-                    pattern: "#,##0.00₸",
-                  },
+                  numberFormat: { type: "NUMBER", pattern: "#,##0.00₸" },
                 },
               },
               fields: "userEnteredFormat.numberFormat",
@@ -92,34 +85,59 @@ async function ensureSheetExists(sheets, sheetTitle) {
       },
     });
   }
+
+  async function hasExpense(chat, updateId) {
+    if (updateId === undefined || updateId === null) return false;
+
+    const sheetTitle = sheetTitleForChat(chat);
+    await ensureSheetExists(sheetTitle);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: sheetRange(sheetTitle, "E2:E"),
+    });
+    const expected = String(updateId);
+    return (res.data.values || []).some((row) => String(row[0]) === expected);
+  }
+
+  async function getSheetSum(chat) {
+    const sheetTitle = sheetTitleForChat(chat);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: sheetRange(sheetTitle, "H1"),
+    });
+
+    return res.data.values?.[0]?.[0] || 0;
+  }
+
+  async function appendExpense({
+    chat,
+    date,
+    amount,
+    description,
+    source,
+    updateId,
+  }) {
+    const sheetTitle = sheetTitleForChat(chat);
+    await ensureSheetExists(sheetTitle);
+
+    if (await hasExpense(chat, updateId)) {
+      return { duplicate: true };
+    }
+
+    const response = await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: sheetRange(sheetTitle, "A:E"),
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      resource: {
+        values: [[date, amount, description, source, updateId]],
+      },
+    });
+
+    return { duplicate: false, response };
+  }
+
+  return { appendExpense, getSheetSum, hasExpense };
 }
 
-async function getSheetSum(sheets, chat) {
-  const sheetTitle = `${chat.title}${chat.id}`;
-
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${sheetTitle}!H1`,
-  });
-
-  const value = res.data.values?.[0]?.[0];
-  return value || 0;
-}
-
-async function appendExpense(
-  sheets,
-  { chat, date, amount, description, source }
-) {
-  await ensureSheetExists(sheets, `${chat.title}${chat.id}`);
-
-  return sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: `${chat.title}${chat.id}!A1`,
-    valueInputOption: "USER_ENTERED",
-    resource: {
-      values: [[date, amount, description, source]],
-    },
-  });
-}
-
-module.exports = { appendExpense, getSheetSum };
+module.exports = { createExpenseStore, sheetTitleForChat };

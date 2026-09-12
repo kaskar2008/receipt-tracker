@@ -16,7 +16,6 @@ artifacts
 .nyc_output/
 reports/
 
-package-lock.json
 pnpm-lock.yaml
 
 # Test generated files

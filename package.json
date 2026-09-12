@@ -5,19 +5,22 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test",
+    "webhook:set": "node scripts/webhook.js set",
+    "webhook:info": "node scripts/webhook.js info",
+    "webhook:delete": "node scripts/webhook.js delete"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@googleapis/sheets": "^17.0.0",
     "dayjs": "^1.11.13",
     "dotenv": "^16.4.7",
-    "googleapis": "^148.0.0",
     "openai": "^4.91.0",
     "telegraf": "^4.16.3"
   }
